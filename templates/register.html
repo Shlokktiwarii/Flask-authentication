@@ -6,6 +6,15 @@
     <p class="mt-1 text-slate-400 text-sm">
       Choose a username, add your email, and set a strong password.
     </p>
+    {% if errors %}
+    <div class="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 text-rose-300 text-sm">
+          <ul  class= list-disc list-inside space-y-1 space-x-1>
+          {%for e in errors%}
+              <li>{{ e }}</li>
+          {% endfor %}
+          </ul>
+    </div> 
+    {% endif %} 
 
     <form class="mt-6 space-y-4" method="post" action="/register" novalidate>
       <div>
