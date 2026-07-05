@@ -1,6 +1,6 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for , flash
 from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, UserMixin,login_user, login_required , current_user
+from flask_login import LoginManager, UserMixin,login_user, login_required , current_user, logout_user
 from sqlalchemy import text
 import re
 from sqlalchemy.exc import IntegrityError
@@ -117,12 +117,19 @@ def create_app():
 
         return render_template('login.html',errors = errors)
     
+     
+    @app.route('/logout')
+    def logout():
+        logout_user()
+        flash("You have been logged out","success")
+        return redirect(url_for('index'))
+
     @login_manager.user_loader
     def load_user(user_id):
         return User.query.get(int(user_id))
+    
 
     return app
-
 
 if __name__ == '__main__':
     app = create_app()
