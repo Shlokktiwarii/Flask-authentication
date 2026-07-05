@@ -1,8 +1,10 @@
 from flask import Flask, render_template, request, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, UserMixin
+from flask_login import LoginManager, UserMixin,login_user, login_required , current_user
 from sqlalchemy import text
 import re
+from sqlalchemy.exc import IntegrityError
+from werkzeug.security import generate_password_hash,check_password_hash
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -47,6 +49,15 @@ def create_app():
     @app.route('/')
     def index():
         return render_template('index.html')
+    
+
+    
+    @app.route('/dashboard')
+    @login_required
+    def dashboard():
+        return render_template('dashboard.html')
+    
+
 
     @app.route('/register', methods = ["GET", "POST"])
     def register():
@@ -67,21 +78,51 @@ def create_app():
                 errors.append("Password must be at least 6 characters long")
             if password != confirm:
                 errors.append("Password don't match.")
-            print("Form submitted",username ,email ,password ,confirm )
+            # print("Form submitted",username ,email ,password ,confirm )
             if not errors:
-                return f"valid input recieved- {email}"
-        
+                pw_hash = generate_password_hash(password)
+                new_user = User(username=username, email=email, password_hash=pw_hash)
+                try:
+                    db.session.add(new_user)
+                    db.session.commit()
+                    return redirect(url_for('login'))
+                except IntegrityError:
+                    db.session.rollback()   
+                    errors.append("Username or email already exists.")
+
+
         return render_template('register.html',errors = errors)
 
-    @app.route('/login')
+    @app.route('/login',methods = ["GET", "POST"])
     def login():
-        return render_template('login.html')
+
+        errors = []
+        if request.method == "POST":
+            email = (request.form.get('email') or "").strip()
+            password = request.form.get('password') or ""
+
+            if not email:
+                errors.append("Email is required.")
+            if not password:
+                errors.append("Password is required.")
+            if not errors:
+                user = User.query.filter_by(email=email).first()
+
+            if not user or not check_password_hash(user.password_hash, password):
+                errors.append("Invalid email or password.")
+            else:
+                login_user(user)
+                return redirect(url_for('dashboard'))
+            
+
+        return render_template('login.html',errors = errors)
     
     @login_manager.user_loader
     def load_user(user_id):
-        return None
+        return User.query.get(int(user_id))
 
     return app
+
 
 if __name__ == '__main__':
     app = create_app()
