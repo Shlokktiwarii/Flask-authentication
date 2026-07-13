@@ -5,6 +5,13 @@ from sqlalchemy import text
 import re
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash,check_password_hash
+import os
+from dotenv import load_dotenv
+from authlib.integrations.flask_client import OAuth
+
+oauth = OAuth()
+load_dotenv()
+
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -13,7 +20,7 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer,primary_key=True)
     username = db.Column(db.String(50), unique = True, nullable = False)
     email = db.Column(db.String(100), unique = True, nullable = False)
-    password_hash = db.Column(db.String(200), nullable = False)
+    password_hash = db.Column(db.String(200), nullable = True)
 
     def __repr__(self):
         return f'<User {self.username}>'
@@ -29,6 +36,14 @@ def create_app():
     
     db.init_app(app)
     login_manager.init_app(app)
+    oauth.init_app(app)
+    oauth.register(
+        name='google',
+        client_id=os.getenv('GOOGLE_CLIENT_ID'),
+        client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
+        server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+        client_kwargs={'scope': 'openid email profile'},
+    )
     login_manager.login_view = "login"
     
     @app.route("/health/db")
@@ -108,14 +123,51 @@ def create_app():
             if not errors:
                 user = User.query.filter_by(email=email).first()
 
-            if not user or not check_password_hash(user.password_hash, password):
-                errors.append("Invalid email or password.")
-            else:
-                login_user(user)
-                return redirect(url_for('dashboard'))
+                if not user or not check_password_hash(user.password_hash, password):
+                    errors.append("Invalid email or password.")
+                else:
+                    login_user(user)
+                    return redirect(url_for('dashboard'))
             
-
         return render_template('login.html',errors = errors)
+
+    @app.route("/login/google")
+    def google_login():
+        redirect_uri = url_for("google_callback", _external=True)
+        return oauth.google.authorize_redirect(redirect_uri)
+
+
+    @app.route("/auth/google/callback")
+    def google_callback():
+        token = oauth.google.authorize_access_token()
+        # Try to get userinfo either from token or parse id token
+        user_info = token.get("userinfo")
+        if not user_info:
+            try:
+                user_info = oauth.google.parse_id_token(token)
+            except Exception:
+                user_info = {}
+
+        email = user_info.get("email")
+        username = user_info.get("name") or (email.split('@')[0] if email else None)
+
+        if not email:
+            flash("Could not retrieve email from Google account.", "error")
+            return redirect(url_for('login'))
+
+        user = User.query.filter_by(email=email).first()
+
+        if not user:
+            user = User(
+                username=username,
+                email=email,
+                password_hash=""
+            )
+            db.session.add(user)
+            db.session.commit()
+
+        login_user(user)
+        return redirect(url_for("dashboard"))
     
      
     @app.route('/logout')
